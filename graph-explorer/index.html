@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Graph API File Explorer</title>
+
+  <!-- MSAL.js v3 -->
+  <script src="https://alcdn.msauth.net/browser/3.26.1/js/msal-browser.min.js"></script>
+
+  <!-- React 18 + ReactDOM (development builds via CDN) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Babel standalone for JSX transpilation in-browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+    }
+
+    header {
+      background: #0078d4;
+      color: white;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+
+    header h1 { margin: 0; font-size: 1.2rem; font-weight: 600; }
+
+    header .spacer { flex: 1; }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+
+    .btn-primary   { background: #0078d4; color: white; }
+    .btn-primary:hover   { background: #106ebe; }
+    .btn-secondary { background: white; color: #0078d4; border: 1px solid #0078d4; }
+    .btn-secondary:hover { background: #f0f7ff; }
+    .btn-danger    { background: #d13438; color: white; }
+    .btn-danger:hover    { background: #a4262c; }
+    .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+    .btn-icon { background: transparent; color: #0078d4; padding: 4px 8px; font-size: 1rem; }
+    .btn-icon:hover { background: #e8f0fe; border-radius: 4px; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+    .card {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    /* Config panel */
+    .config-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 600px) { .config-grid { grid-template-columns: 1fr; } }
+
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: #444; }
+    input[type="text"] {
+      width: 100%; padding: 8px 10px; border: 1px solid #ccc;
+      border-radius: 4px; font-size: 0.9rem; font-family: monospace;
+    }
+    input[type="text"]:focus { outline: none; border-color: #0078d4; }
+
+    .hint { font-size: 0.78rem; color: #666; margin-top: 4px; }
+
+    /* Breadcrumb */
+    .breadcrumb {
+      display: flex; align-items: center; flex-wrap: wrap;
+      gap: 4px; margin-bottom: 16px; font-size: 0.9rem;
+    }
+    .breadcrumb .crumb { color: #0078d4; cursor: pointer; }
+    .breadcrumb .crumb:hover { text-decoration: underline; }
+    .breadcrumb .sep { color: #999; }
+    .breadcrumb .current { color: #333; font-weight: 500; }
+
+    /* File list */
+    .file-table { width: 100%; border-collapse: collapse; }
+    .file-table th {
+      text-align: left; padding: 8px 12px;
+      font-size: 0.8rem; color: #555; text-transform: uppercase;
+      letter-spacing: .04em; border-bottom: 2px solid #e8e8e8;
+    }
+    .file-table td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    .file-table tr:last-child td { border-bottom: none; }
+    .file-table tr:hover td { background: #f8f9fa; }
+
+    .file-name {
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+    }
+    .file-name:hover .name-text { text-decoration: underline; color: #0078d4; }
+
+    .icon { font-size: 1.2rem; }
+    .size-col, .modified-col { font-size: 0.85rem; color: #666; white-space: nowrap; }
+
+    .actions-col { text-align: right; white-space: nowrap; }
+
+    /* Status bar */
+    .status { padding: 10px 16px; border-radius: 4px; margin-bottom: 16px; font-size: 0.9rem; }
+    .status.error { background: #fde7e9; color: #a4262c; border: 1px solid #f4c3c5; }
+    .status.info  { background: #e6f4ff; color: #0050b3; border: 1px solid #b3d9ff; }
+    .status.success { background: #e6f9e6; color: #1a6e1a; border: 1px solid #b3e6b3; }
+
+    .spinner {
+      display: inline-block; width: 20px; height: 20px;
+      border: 3px solid #e0e0e0; border-top-color: #0078d4;
+      border-radius: 50%; animation: spin .7s linear infinite;
+      vertical-align: middle; margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty-state {
+      text-align: center; padding: 48px 16px; color: #888;
+    }
+    .empty-state .big-icon { font-size: 3rem; margin-bottom: 12px; }
+
+    .user-chip {
+      background: rgba(255,255,255,.2); border-radius: 20px;
+      padding: 4px 12px; font-size: 0.85rem; display: flex;
+      align-items: center; gap: 8px;
+    }
+
+    .search-bar {
+      width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+      border-radius: 4px; font-size: 0.9rem; margin-bottom: 16px;
+    }
+    .search-bar:focus { outline: none; border-color: #0078d4; }
+
+    .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .toolbar .spacer { flex: 1; }
+
+    .tag { display: inline-block; background: #e8f0fe; color: #1a56db; border-radius: 12px; padding: 2px 8px; font-size: 0.75rem; }
+
+    details summary { cursor: pointer; font-size: 0.85rem; color: #0078d4; user-select: none; }
+    details[open] summary { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ─── MSAL config ────────────────────────────────────────────────────────────
+// Replace CLIENT_ID with your own Azure AD App Registration's Application (client) ID.
+// The app must allow "Single-page application" redirect URIs and have Files.Read / Sites.Read.All
+// delegated permissions (or just use the Graph Explorer client below for quick testing).
+//
+// Graph Explorer public client:  de8bc8b5-d9f9-48b1-a8ad-b748da725064
+// It works for any Microsoft 365 tenant for interactive login.
+
+const DEFAULT_CONFIG = {
+  clientId: "de8bc8b5-d9f9-48b1-a8ad-b748da725064",
+  tenantId: "common",   // Use your tenant ID or "common" for multi-tenant
+  redirectUri: window.location.origin + window.location.pathname,
+};
+
+const GRAPH_SCOPES = ["Files.Read", "Files.ReadWrite", "Sites.Read.All", "User.Read"];
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+function formatBytes(bytes) {
+  if (bytes == null) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function itemIcon(item) {
+  if (item.folder) return "📁";
+  const ext = (item.name || "").split(".").pop().toLowerCase();
+  const map = {
+    pdf: "📄", doc: "📝", docx: "📝", xls: "📊", xlsx: "📊",
+    ppt: "📋", pptx: "📋", png: "🖼️", jpg: "🖼️", jpeg: "🖼️",
+    gif: "🖼️", mp4: "🎬", mp3: "🎵", zip: "📦", rar: "📦",
+    txt: "📃", csv: "📊", json: "📋", js: "📜", ts: "📜",
+    py: "🐍", html: "🌐", css: "🎨", md: "📑",
+  };
+  return map[ext] || "📄";
+}
+
+// ─── GraphClient ─────────────────────────────────────────────────────────────
+class GraphClient {
+  constructor(msalInstance) {
+    this.msal = msalInstance;
+    this._token = null;
+  }
+
+  async getToken() {
+    const accounts = this.msal.getAllAccounts();
+    if (accounts.length === 0) throw new Error("Not signed in");
+    try {
+      const resp = await this.msal.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: accounts[0] });
+      return resp.accessToken;
+    } catch {
+      const resp = await this.msal.acquireTokenPopup({ scopes: GRAPH_SCOPES });
+      return resp.accessToken;
+    }
+  }
+
+  async fetch(path, opts = {}) {
+    const token = await this.getToken();
+    const url = `https://graph.microsoft.com/v1.0${path}`;
+    const res = await window.fetch(url, {
+      ...opts,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...opts.headers },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
+      throw new Error(err.error?.message || res.statusText);
+    }
+    return res.json();
+  }
+
+  async getMe() { return this.fetch("/me"); }
+
+  async listDriveItems(driveItemId = null) {
+    const path = driveItemId
+      ? `/me/drive/items/${driveItemId}/children`
+      : "/me/drive/root/children";
+    const data = await this.fetch(`${path}?$top=200&$orderby=name asc&$select=id,name,folder,file,size,lastModifiedDateTime,webUrl,parentReference`);
+    return data.value || [];
+  }
+
+  async searchDrive(query) {
+    const data = await this.fetch(`/me/drive/root/search(q='${encodeURIComponent(query)}')?$top=50&$select=id,name,folder,file,size,lastModifiedDateTime,webUrl,parentReference`);
+    return data.value || [];
+  }
+
+  async getDriveItem(itemId) {
+    return this.fetch(`/me/drive/items/${itemId}?$select=id,name,folder,file,size,lastModifiedDateTime,webUrl,parentReference`);
+  }
+}
+
+// ─── Components ──────────────────────────────────────────────────────────────
+
+function ConfigPanel({ config, onSave }) {
+  const [clientId, setClientId] = useState(config.clientId);
+  const [tenantId, setTenantId] = useState(config.tenantId);
+
+  return (
+    <div className="card">
+      <details>
+        <summary>⚙️ App Registration Settings (click to expand)</summary>
+        <div className="config-grid">
+          <div>
+            <label>Client ID (Application ID)</label>
+            <input type="text" value={clientId} onChange={e => setClientId(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+            <p className="hint">Azure AD → App registrations → Your App → Application (client) ID</p>
+          </div>
+          <div>
+            <label>Tenant ID</label>
+            <input type="text" value={tenantId} onChange={e => setTenantId(e.target.value)} placeholder="common or your-tenant-id" />
+            <p className="hint">Use <code>common</code> for any tenant, or your specific tenant ID / domain</p>
+          </div>
+        </div>
+        <button className="btn-primary" onClick={() => onSave({ clientId, tenantId, redirectUri: DEFAULT_CONFIG.redirectUri })}>
+          Apply &amp; Re-initialize
+        </button>
+        <p className="hint" style={{marginTop:8}}>
+          Redirect URI must be added to your app registration → Authentication → Single-page application:
+          <strong> {window.location.origin + window.location.pathname}</strong>
+        </p>
+      </details>
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin, loading, error }) {
+  return (
+    <div className="card" style={{textAlign:"center", padding:"48px 24px"}}>
+      <div style={{fontSize:"3rem", marginBottom:"16px"}}>☁️</div>
+      <h2 style={{margin:"0 0 8px"}}>Microsoft Graph File Explorer</h2>
+      <p style={{color:"#666", marginBottom:"24px"}}>
+        Sign in with your Microsoft 365 / webbexpert account to browse your OneDrive files.
+      </p>
+      {error && <div className="status error" style={{marginBottom:"16px"}}>{error}</div>}
+      <button className="btn-primary" onClick={onLogin} disabled={loading} style={{fontSize:"1rem", padding:"10px 28px"}}>
+        {loading ? <><span className="spinner"/>Signing in…</> : "🔐 Sign in with Microsoft"}
+      </button>
+      <p className="hint" style={{marginTop:"16px"}}>
+        Uses OAuth 2.0 popup. No credentials leave your browser. Token stored only in memory.
+      </p>
+    </div>
+  );
+}
+
+function Breadcrumb({ trail, onNavigate }) {
+  return (
+    <nav className="breadcrumb">
+      {trail.map((crumb, i) => (
+        <React.Fragment key={crumb.id || "root"}>
+          {i > 0 && <span className="sep">›</span>}
+          {i < trail.length - 1
+            ? <span className="crumb" onClick={() => onNavigate(crumb, i)}>{crumb.name}</span>
+            : <span className="current">{crumb.name}</span>
+          }
+        </React.Fragment>
+      ))}
+    </nav>
+  );
+}
+
+function FileRow({ item, onNavigate, onOpen }) {
+  return (
+    <tr>
+      <td>
+        <span className="file-name" onClick={() => item.folder ? onNavigate(item) : onOpen(item)}>
+          <span className="icon">{itemIcon(item)}</span>
+          <span className="name-text">{item.name}</span>
+          {item.folder && <span className="tag">{item.folder.childCount ?? ""} items</span>}
+        </span>
+      </td>
+      <td className="size-col">{item.folder ? "—" : formatBytes(item.size)}</td>
+      <td className="modified-col">{formatDate(item.lastModifiedDateTime)}</td>
+      <td className="actions-col">
+        {item.webUrl && (
+          <a href={item.webUrl} target="_blank" rel="noopener noreferrer">
+            <button className="btn-icon btn-sm" title="Open in browser">↗</button>
+          </a>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function FileBrowser({ client, user, onSignOut }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [trail, setTrail] = useState([{ id: null, name: "My Drive" }]);
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const searchTimeout = useRef(null);
+
+  const currentFolder = trail[trail.length - 1];
+
+  const loadItems = useCallback(async (folderId) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await client.listDriveItems(folderId);
+      setItems(data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [client]);
+
+  useEffect(() => { loadItems(currentFolder.id); }, [currentFolder.id, loadItems]);
+
+  // Live search
+  useEffect(() => {
+    if (!search.trim()) { setSearchResults(null); return; }
+    clearTimeout(searchTimeout.current);
+    setSearching(true);
+    searchTimeout.current = setTimeout(async () => {
+      try {
+        const results = await client.searchDrive(search.trim());
+        setSearchResults(results);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+  }, [search, client]);
+
+  function navigateTo(item) {
+    setSearch("");
+    setSearchResults(null);
+    setTrail(prev => [...prev, { id: item.id, name: item.name }]);
+  }
+
+  function navigateToIndex(crumb, index) {
+    setSearch("");
+    setSearchResults(null);
+    setTrail(prev => prev.slice(0, index + 1));
+  }
+
+  function openFile(item) {
+    if (item.webUrl) window.open(item.webUrl, "_blank", "noopener,noreferrer");
+  }
+
+  const displayedItems = searchResults !== null ? searchResults : items;
+  const sortedItems = [...displayedItems].sort((a, b) => {
+    if (a.folder && !b.folder) return -1;
+    if (!a.folder && b.folder) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return (
+    <>
+      <div className="card" style={{padding:"16px 24px"}}>
+        <div style={{display:"flex", alignItems:"center", gap:16, flexWrap:"wrap"}}>
+          <span style={{fontWeight:600}}>👤 {user.displayName}</span>
+          <span style={{color:"#666", fontSize:"0.85rem"}}>{user.mail || user.userPrincipalName}</span>
+          <span className="spacer"/>
+          <button className="btn-danger btn-sm" onClick={onSignOut}>Sign out</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="toolbar">
+          <button className="btn-secondary btn-sm" onClick={() => loadItems(currentFolder.id)} disabled={loading}>
+            🔄 Refresh
+          </button>
+          <span className="spacer"/>
+          <span style={{fontSize:"0.85rem", color:"#666"}}>
+            {sortedItems.length} item{sortedItems.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+
+        <Breadcrumb trail={trail} onNavigate={navigateToIndex} />
+
+        <input
+          type="text"
+          className="search-bar"
+          placeholder="🔍 Search files across your drive…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+
+        {error && <div className="status error">⚠️ {error}</div>}
+
+        {(loading || searching) && (
+          <div className="status info"><span className="spinner"/> {searching ? "Searching…" : "Loading files…"}</div>
+        )}
+
+        {!loading && !searching && sortedItems.length === 0 && (
+          <div className="empty-state">
+            <div className="big-icon">{search ? "🔍" : "📂"}</div>
+            <p>{search ? `No results for "${search}"` : "This folder is empty"}</p>
+          </div>
+        )}
+
+        {sortedItems.length > 0 && (
+          <table className="file-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Size</th>
+                <th>Modified</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedItems.map(item => (
+                <FileRow
+                  key={item.id}
+                  item={item}
+                  onNavigate={navigateTo}
+                  onOpen={openFile}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+function App() {
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [msalInstance, setMsalInstance] = useState(null);
+  const [graphClient, setGraphClient] = useState(null);
+  const [user, setUser] = useState(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState(null);
+  const [initError, setInitError] = useState(null);
+
+  // Initialize MSAL whenever config changes
+  useEffect(() => {
+    setUser(null);
+    setLoginError(null);
+    setInitError(null);
+
+    const msalConfig = {
+      auth: {
+        clientId: config.clientId,
+        authority: `https://login.microsoftonline.com/${config.tenantId}`,
+        redirectUri: config.redirectUri,
+        navigateToLoginRequestUrl: false,
+      },
+      cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false },
+    };
+
+    try {
+      const instance = new msal.PublicClientApplication(msalConfig);
+      instance.initialize().then(() => {
+        setMsalInstance(instance);
+        setGraphClient(new GraphClient(instance));
+        // Check if already signed in
+        const accounts = instance.getAllAccounts();
+        if (accounts.length > 0) {
+          silentLogin(instance, accounts[0]);
+        }
+      }).catch(e => setInitError(e.message));
+    } catch (e) {
+      setInitError(e.message);
+    }
+  }, [config]);
+
+  async function silentLogin(instance, account) {
+    try {
+      const gc = new GraphClient(instance);
+      const me = await gc.getMe();
+      setUser(me);
+      setGraphClient(gc);
+    } catch { /* silent fail, user clicks login */ }
+  }
+
+  async function handleLogin() {
+    if (!msalInstance) return;
+    setLoginLoading(true);
+    setLoginError(null);
+    try {
+      const resp = await msalInstance.loginPopup({ scopes: GRAPH_SCOPES });
+      const gc = new GraphClient(msalInstance);
+      const me = await gc.getMe();
+      setUser(me);
+      setGraphClient(gc);
+    } catch (e) {
+      setLoginError(e.message || "Login failed. Check popup blocker and try again.");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  function handleSignOut() {
+    if (!msalInstance) return;
+    msalInstance.logoutPopup().catch(() => {});
+    setUser(null);
+    setGraphClient(null);
+  }
+
+  return (
+    <>
+      <header>
+        <span style={{fontSize:"1.4rem"}}>📁</span>
+        <h1>Graph API File Explorer</h1>
+        <span className="spacer"/>
+        {user && <div className="user-chip">✓ {user.displayName}</div>}
+      </header>
+
+      <div className="container">
+        <ConfigPanel config={config} onSave={setConfig} />
+
+        {initError && (
+          <div className="status error">MSAL initialization error: {initError}</div>
+        )}
+
+        {!user ? (
+          <LoginScreen onLogin={handleLogin} loading={loginLoading} error={loginError} />
+        ) : (
+          <FileBrowser client={graphClient} user={user} onSignOut={handleSignOut} />
+        )}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
